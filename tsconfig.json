@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "lib": [
+      "esnext",
+    ],
+    "target": "esnext",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "inlineSourceMap": true,
+    "skipLibCheck": true,
+    "outDir": "dist",
+    "baseUrl": "./src",
+    "paths": {
+      "@/*": [
+        "*"
+      ]
+    }
+  },
+  "include": [
+    "./src/**/*",
+    "./scripts/**/*"
+  ]
+}
