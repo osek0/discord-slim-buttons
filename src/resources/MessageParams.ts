@@ -8,5 +8,8 @@ export interface MessageParams {
   embed?: Types.Embed;
   allowed_mentions?: Types.AllowedMentions;
   message_reference?: Types.MessageReference;
+}
+
+export interface MessageWithComponents extends MessageParams {
   components?: Types.ActionRow[];
 }
