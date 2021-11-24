@@ -10,6 +10,7 @@
     "experimentalDecorators": true,
     "inlineSourceMap": true,
     "skipLibCheck": true,
+    "declaration": true,
     "outDir": "dist",
     "baseUrl": "./src",
     "paths": {

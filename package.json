@@ -2,7 +2,8 @@
   "name": "discord-slim-buttons",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "type": "module",
   "scripts": {
     "dev": "node --loader ts-node/esm -r dotenv\\config .\\src\\index.ts"

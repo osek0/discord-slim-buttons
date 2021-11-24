@@ -1,22 +1,27 @@
-import {Actions, Authorization, Client, ClientEvents, Events, Helpers, Types} from 'discord-slim';
-import { randomUUID } from 'crypto'
+import { Actions, Authorization, Client, ClientEvents, Events, Helpers, Types } from 'discord-slim';
 
-import {MessageParams, MessageWithComponents} from "@/resources/MessageParams";
+import { MessageParams, MessageWithComponents } from "./resources/MessageParams";
+import { InteractionCallbacks } from "./resources/InteractionCallbacks";
+import { Button } from './components/Button.js';
+import { LinkButton } from './components/LinkButton.js';
+import { SelectMenu } from './components/SelectMenu.js';
+import { ActionRow } from './components/ActionRow.js';
 
 interface DiscordConfig {
   botToken: string;
   applicationId: string;
 }
 
-class DiscordButtons {
+export class DiscordButtons {
   private client = new Client();
   private config: DiscordConfig;
-  interactionCallbacks: { [k: string]: (interactions: Types.Interaction) => any } = {};
+  interactionCallbacks: InteractionCallbacks = {};
 
-  constructor(config: DiscordConfig) {
+  constructor(config: DiscordConfig, interactionCallbacks: InteractionCallbacks) {
     this.config = config;
     this.setupClientListeners();
     this.setupEventListeners();
+    this.interactionCallbacks = interactionCallbacks;
 
     const authorization = new Authorization(this.config.botToken);
     Actions.setDefaultRequestOptions({ authorization });
@@ -38,112 +43,51 @@ class DiscordButtons {
     this.client.events.on(Events.INTERACTION_CREATE, (interaction: Types.Interaction) => this.handleButtonInteraction(interaction));
   }
 
-  private handleButtonInteraction(interaction: Types.Interaction) {
-    this.interactionCallbacks[interaction.data.custom_id](interaction);
+  private async handleButtonInteraction(interaction: Types.Interaction) {
+    if (interaction.type !== Helpers.InteractionTypes.MESSAGE_COMPONENT) return;
+
+    const callback = this.interactionCallbacks[interaction.data.custom_id];
+    if (!callback) return;
+
+    const params: Types.InteractionResponse = callback(interaction);
+    await Actions.Application.CreateInteractionResponse(interaction.id, interaction.token, params)
+
+    return;
   }
 
-  async sendMessage (channelId: string, params: MessageParams, actionRows: ActionRow[]) {
+  async sendMessage (channelId: string, params: MessageParams, actionRows: ActionRow[]): Promise<InteractionCallbacks> {
     if (actionRows.length > 5) {
       throw new Error('Can have up to 5 action rows in single message');
     }
 
     const components = [];
+    let actionRowsCallbacks: InteractionCallbacks = {};
     for (const actionRow of actionRows) {
       components.push(actionRow.params);
-      this.interactionCallbacks = { ...this.interactionCallbacks, ...actionRow.interactionCallbacks };
+      actionRowsCallbacks = { ...actionRowsCallbacks, ...actionRow.interactionCallbacks };
     }
 
-    const paramsWithComponents: MessageWithComponents = {
-      ...params,
-      components
-    }
+    this.interactionCallbacks = { ...this.interactionCallbacks, ...actionRowsCallbacks };
 
+    const paramsWithComponents: MessageWithComponents = { ...params, components };
     await Actions.Message.Create(channelId, paramsWithComponents).catch(err => {
       console.log(err)
     });
+
+    return actionRowsCallbacks;
   }
 }
 
-class Button {
-  callback: (interaction: Types.Interaction) => any;
-  params: Types.Button;
-
-  constructor (callback: (interaction: Types.Interaction) => any, style: Helpers.ButtonStyles, label: string, emoji?: Types.Emoji) {
-    this.callback = callback;
-    this.params = {
-      type: Helpers.ComponentTypes.BUTTON,
-      style,
-      label,
-      emoji,
-      custom_id: randomUUID()
-    };
-  }
-}
-
-class LinkButton {
-  params: Types.Button;
-
-  constructor(label: string, url: string, emoji: Types.Emoji) {
-    this.params = {
-      type: Helpers.ComponentTypes.BUTTON,
-      style: Helpers.ButtonStyles.LINK,
-      label,
-      emoji,
-      url
-    };
-  }
-}
-
-class SelectMenu {
-  callback: (interaction: Types.Interaction) => any;
-  params: Types.SelectMenu;
-
-  constructor(callback: (interaction: Types.Interaction) => any, options: { label: string, value: string, description?: string, emoji?: Types.Emoji }[], placeholder?: string) {
-    this.callback = callback;
-    this.params = {
-      type: Helpers.ComponentTypes.SELECT_MENU,
-      custom_id: randomUUID(),
-      options,
-      placeholder,
-      min_values: 1,
-      max_values: options.length
-    };
-  }
-}
-
-class ActionRow {
-  params: { type: Helpers.ComponentTypes.ACTION_ROW, components: SelectMenu[] | (LinkButton | Button)[] }
-  interactionCallbacks: { [k: string]: (interactions: Types.Interaction) => any } = {};
-
-  constructor(component: SelectMenu | (Button | LinkButton)[]) {
-    const actionComponents = Array.isArray(component) ? component : [component];
-    if (actionComponents.length > 5) {
-      throw new Error('Can have up to 5 buttons in action row');
-    }
-
-    const components = [];
-    for (const actionComponent of actionComponents) {
-      components.push(actionComponent.params);
-      if (actionComponent instanceof LinkButton) continue;
-
-      this.interactionCallbacks[actionComponent.params.custom_id] = actionComponent.callback;
-    }
-
-    this.params = {
-      type: Helpers.ComponentTypes.ACTION_ROW,
-      components
-    }
-  }
-}
+export { Button, LinkButton, SelectMenu, ActionRow };
 
 async function main() {
   const discordButtons = new DiscordButtons({
     botToken: process.env.BOT_TOKEN,
     applicationId: process.env.APPLICATION_ID
-  });
+  }, {});
 
-  const button = new Button(interaction => console.log(interaction.message.content), Helpers.ButtonStyles.SUCCESS, 'ok', { "id": null, "name": "🔥" });
-  const button2 = new Button(interaction => console.log(interaction), Helpers.ButtonStyles.DANGER, 'close');
+  const button = new Button(interaction => ({ type: Helpers.InteractionCallbackTypes.CHANNEL_MESSAGE_WITH_SOURCE, data: { content: interaction.data.custom_id } }), Helpers.ButtonStyles.SUCCESS, 'ok', { "id": null, "name": "🔥" });
+  const button2 = new Button(interaction => ({ type: Helpers.InteractionCallbackTypes.CHANNEL_MESSAGE_WITH_SOURCE, data: { content: interaction.data.custom_id } }), Helpers.ButtonStyles.DANGER, 'close');
   const button3 = new LinkButton('ok', 'https://google.com/', { "id": null, "name": "🔥" });
 
   const selectMenuOptions = [
@@ -176,7 +120,7 @@ async function main() {
     }
   ];
 
-  const selectMenu = new SelectMenu(interaction => console.log(interaction.data.values), selectMenuOptions, 'Make a selection');
+  const selectMenu = new SelectMenu(interaction => ({ type: Helpers.InteractionCallbackTypes.CHANNEL_MESSAGE_WITH_SOURCE, data: { content: interaction.data.custom_id } }), selectMenuOptions, 'Make a selection');
   const actionRow = new ActionRow(selectMenu);
   const actionRow2 = new ActionRow([button, button3, button2]);
 
@@ -185,7 +129,8 @@ async function main() {
     embeds: [{ title: 'Kliknij w ciastko!', description: 'Click! Click! Click!', color: 15105570, url: 'https://orteil.dashnet.org/cookieclicker/' }]
   }
 
-  discordButtons.sendMessage('897069950047502346', params, [actionRow, actionRow2]);
+  const callbacks = await discordButtons.sendMessage('897069950047502346', params, [actionRow, actionRow2]);
+  console.log(callbacks);
 }
 
 main();
